@@ -1,0 +1,812 @@
+# dHunger system
+# Arena admins require op or dhunger.command permission
+# Arenas are stored in dHungers_saves.yml and is 
+# Editable and reloadable.
+# Created by Talamar1
+
+Hunger:
+  type: world
+  debug: true
+  events:
+    on server start:
+    - run InitdHunger delay:10t
+
+    on dhg command:
+    - determine passively fulfilled
+    - if !<context.server> {
+      - if !<player.has_permission[dhunger.command]> {
+        - narrate "<&6>You do not have permission to use the dhunger command."
+        - queue clear
+        }
+      }
+    - if <context.args.size||0> == 0 {
+      - inject dhunger_command_help
+      - queue clear
+      }
+    - define arg1 <context.args.get[1].escaped>
+    - define cmdList li@create|save|delete|spawn|set|breakable|lock|unlock|resize|board|disable|enable|start|stop|quit|select|list|clear|reload|lobby
+    - if <def[cmdList].contains[%arg1%]> {
+      - if <context.server> || <player.has_permission[dhunger.%arg1%]||false> {
+        - inject dhunger_command_%arg1%
+        - queue clear
+        }
+      }
+    - inject dhunger_command_help
+
+    on player clicks wall_sign:
+    - define sign <context.location.simple.as_location>
+    - foreach <yaml[dhunger_saves].list_keys[hg.arenas]> {
+      - if <yaml[dhunger_saves].read[hg.arenas.%value%.board].as_list.contains[%sign%]> && <yaml[dhunger_saves].read[hg.arenas.%value%.settings.enable]||false> {
+        - flag <player> dhg:%value%
+        - inject dhunger_join
+        - foreach stop
+        }
+      }
+    
+    on player quits:
+    - adjust <player> walk_speed:0.0
+    - flag <player> dhg:!
+    
+    on player breaks block in notable cuboid:
+    - foreach <yaml[dhunger_saves].list_keys[hg.arenas]> {
+      - if <yaml[dhunger_saves].read[hg.arenas.%value%.settings.locked]||false> {
+        - if <context.cuboids.contains[cu@dhg_%value%]> && <yaml[dhunger_saves].read[hg.arenas.%value%.settings.breakable].size.is[more].than[0]> {
+          - if !<yaml[dhunger_saves].read[hg.arenas.%value%.settings.breakable].contains[<context.material>]> {
+            - determine cancelled
+            - foreach stop
+            }
+          }
+        }
+      }
+
+    on player places block in notable cuboid:
+    - foreach <yaml[dhunger_saves].list_keys[hg.arenas]> {
+      - if <context.cuboids.contains[cu@dhg_%value%]> && <yaml[dhunger_saves].read[hg.arenas.%value%.settings.locked]||false> {
+        - determine cancelled
+        - foreach stop
+        }
+      }
+
+InitdHunger:
+  type: task
+  debug: false
+  script:
+    - inject dhunger_command_reload
+    - inject dhunger_init_signs
+
+dhunger_command_help:
+  type: task
+  debug: false
+  script:
+    - if <player.has_permission[dhunger.create]>    narrate "<&6>/dhg create <&lt>arena name<&gt>"
+    - if <player.has_permission[dhunger.save]>      narrate "<&6>/dhg save"
+    - if <player.has_permission[dhunger.delete]>    narrate "<&6>/dhg delete <&lt>arena name<&gt>"
+    - if <player.has_permission[dhunger.spawn]>     narrate "<&6>/dhg spawn <&lb>add<&rb>/<&lb>del <&lt>id<&gt><&rb>/<&lb>list<&rb>/<&lb>show<&rb>"
+    - if <player.has_permission[dhunger.breakable]> narrate "<&6>/dhg breakable <&lb>add<&rb>/<&lb>del<&rb>/<&lb>list<&rb>/<&lb>clear<&rb>"
+    - if <player.has_permission[dhunger.set]>       narrate "<&6>/dhg set <&lt>setting<&gt> <&lt>value<&gt>"
+    - if <player.has_permission[dhunger.addboard]>  narrate "<&6>/dhg addboard <&lt>arena name<&gt>"
+    - if <player.has_permission[dhunger.disable]>   narrate "<&6>/dhg disable <&lt>arena name<&gt>"
+    - if <player.has_permission[dhunger.enable]>    narrate "<&6>/dhg enable <&lt>arena name<&gt>"
+    - if <player.has_permission[dhunger.start]>     narrate "<&6>/dhg start <&lt>arena name<&gt>"
+    - if <player.has_permission[dhunger.stop]>      narrate "<&6>/dhg stop <&lt>arena name<&gt>"
+    - if <player.has_permission[dhunger.quit]>      narrate "<&6>/dhg quit"
+    - if <player.has_permission[dhunger.select]>    narrate "<&6>/dhg select <&lt>arena name<&gt>"
+    - if <player.has_permission[dhunger.list]>      narrate "<&6>/dhg list"
+    - if <player.has_permission[dhunger.reload]>    narrate "<&6>/dhg reload"
+
+dhunger_command_create:
+  type: task
+  debug: true
+  script:
+    - if <context.args.get[2].is[==].to[null]||true> { 
+      - narrate "<&6>/dhg create <&lt>arena name<&gt>" 
+      - narrate "<&6>arena name - name for your arena" 
+      - queue clear 
+      }
+    - if !<context.args.get[2].is[==].to[<context.args.get[2].escaped>]> { 
+      - narrate "<&6>That value doesn't look right." 
+      - queue clear 
+      }
+    - define arg2 <context.args.get[2]>
+    - if <yaml[hunger_saves].contains[hg.arenas.%arg2%]> {
+      - narrate "<&6>Arena with that name already exists."
+      - queue clear
+      }
+    - if <player.selected_region.is[==].to[null]||true> { 
+      - narrate "<&6>You don't have an area selected with WorldEdit wand." 
+      - queue clear 
+      }
+    - narrate "Creating new arena"
+    - yaml id:dhunger_saves set hg.arenas.%arg2%.cuboid:<player.selected_region>
+    - yaml id:dhunger_saves set hg.arenas.%arg2%.settings.min_players:2
+    - yaml id:dhunger_saves set hg.arenas.%arg2%.settings.locked:false
+    - yaml id:dhunger_saves set hg.arenas.%arg2%.settings.max_players:20
+    - yaml id:dhunger_saves set hg.arenas.%arg2%.settings.timer:120
+    - yaml id:dhunger_saves set hg.arenas.%arg2%.settings.restock:0
+    - inject dhunger_command_save
+    - note <player.selected_region> as:dhg_%arg2%
+    - flag player dhg:%arg2%
+    - narrate "Arena created."
+
+dhunger_command_save:
+  type: task
+  debug: true
+  script:
+    - narrate "Saving Hunger Games"
+    - yaml savefile:dhunger_saves.yml id:dhunger_saves
+
+dhunger_command_delete:
+  type: task
+  debug: true
+  script:
+    - if !<player.has_flag[dhg]> {
+      - narrate "You don't have an arena selected."
+      - queue clear
+      }
+    - narrate "Deleting selected arena."
+    - yaml id:dhunger_saves set hg.arenas.<player.flag[dhg]>:!
+    - flag player dhg:!
+    - inject dhunger_command_save
+
+dhunger_command_reload:
+  type: task
+  debug: true
+  script:
+    - if <yaml.list.contains[dhunger_saves]> yaml unload id:dhunger_saves
+    - if <server.has_file[dhunger_saves.yml]> { 
+      - announce "<red><&lb>dHunger<&rb> <green>Loading Hunger Config File"
+      - yaml load:dhunger_saves.yml id:dhunger_saves
+      }
+      else { 
+      - announce "<red><&lb>dHunger<&rb> <green>Creating Hunger Config File"
+      - yaml create id:dhunger_saves
+      - yaml savefile:dhunger_saves.yml id:dhunger_saves
+      }
+
+dhunger_command_clear:
+  type: task
+  debug: false
+  script:
+    - yaml unload id:dhunger_saves
+    - yaml create id:dhunger_saves
+    - inject dhunger_command_save
+
+dhunger_command_select:
+  type: task
+  debug: true
+  script:
+    - if <context.args.get[2].is[==].to[null]||true> { 
+      - narrate "<&6>/dhg select <&lt>arena name<&gt>" 
+      - narrate "<&6>arena name - name for your arena" 
+      - queue clear 
+      }
+    - if !<context.args.get[2].is[==].to[<context.args.get[2].escaped>]> { 
+      - narrate "<&6>That value doesn't look right." 
+      - queue clear 
+      }
+    - define arg2 <context.args.get[2]>
+    - if <yaml[dhunger_saves].list_keys[hg.arenas].contains[%arg2%]> {
+      - narrate "<&6>Selecting arena with name: %arg2%"
+      - flag player dhg:%arg2%
+      }
+      else narrate "<&6>Arena with that name not found."
+
+
+dhunger_command_resize:
+  type: task
+  debug: true
+  script:
+    - if !<player.has_flag[dhg]> {
+      - narrate "You don't have an arena selected."
+      - queue clear
+      }
+    - if <player.selected_region.is[==].to[null]||true> { 
+      - narrate "<&6>You don't have an area selected with WorldEdit wand." 
+      - queue clear 
+      }
+    - narrate "Creating new arena"
+    - yaml id:dhunger_saves set hg.arenas.<player.flag[dhg]>.cuboid:<player.selected_region>
+    - inject dhunger_command_save
+    - note <player.selected_region> as:dhg_<player.flag[dhg]>
+    - narrate "Arena resized."
+
+dhunger_command_spawn:
+  type: task
+  debug: true
+  script:
+    - if <context.args.get[2].is[==].to[null]||true> && <context.args.get[3].is[==].to[null]||true> { 
+      - narrate "<&6>/dhg spawn add - add a new spawn"
+      - narrate "<&6>/dhg spawn del <&lt>ID<&gt> - delete spawn at ID number (use list)"
+      - narrate "<&6>/dhg spawn list - list all spawns"
+      - narrate "<&6>/dhg spawn show - visually show spawns"
+      - queue clear 
+      }
+    - if !<player.has_flag[dhg]> {
+      - narrate "You don't have an arena selected."
+      - queue clear
+      }
+    - define arg2 <context.args.get[2]>
+    - define arg3 <context.args.get[3]>
+    - define settings li@add|del|list|show
+    - if <def[settings].contains[%arg2%]> {
+      - if <def[arg3].is[==].to[help]> {
+        - inject dhunger_help_spawn_%arg2%
+        }
+        else {
+        - inject dhunger_spawn_%arg2%
+        }
+      }
+      else {
+      - narrate "Invalid setting"
+      }
+
+dhunger_spawn_add:
+  type: task
+  debug: true
+  script:
+    - narrate "Adding new spawnpoint."
+    - define scount <yaml[dhunger_saves].list_keys[hg.arenas.<player.flag[dhg]>.spawnpoint].size||0>
+    - define spawnpoint l@<player.location.block.x.add[.5]>,<player.location.block.y>,<player.location.block.z.add[.5]>,<player.location.pitch>,<player.location.yaw>,<player.location.world.name>
+    - yaml id:dhunger_saves set hg.arenas.<player.flag[dhg]>.spawnpoint.<def[scount].add[1]>:%spawnpoint%
+    - inject dhunger_command_save
+
+dhunger_spawn_del:
+  type: task
+  debug: true
+  script:
+    - if <context.args.get[3].is[==].to[null]||true> { 
+      - narrate "<&6>/dhg spawn del <&lt>spawnpoint<&gt>" 
+      - narrate "<&6>spawnpoint - ID Number for spawnpoint" 
+      - queue clear 
+      }
+    - define arg3 <context.args.get[3]>
+    - if <yaml[dhunger_saves].contains[hg.arenas.<player.flag[dhg]>.spawnpoint.%arg3%]> {
+      - narrate "Removing spawnpoint."
+      - yaml id:dhunger_saves set hg.arenas.<player.flag[dhg]>.spawnpoint.%arg3%:!
+      - foreach <yaml[dhunger_saves].list_keys[hg.arenas.<player.flag[dhg]>.spawnpoint].numerical> {
+        - define spawnpoint <yaml[dhunger_saves].read[hg.arenas.<player.flag[dhg]>.spawnpoint.%value%]>
+        - yaml id:dhunger_saves set hg.arenas.<player.flag[dhg]>.spawnpoint.%value%:!
+        - yaml id:dhunger_saves set hg.arenas.<player.flag[dhg]>.spawnpoint.%loop_index%:%spawnpoint%
+        }
+      - inject dhunger_command_save
+      }
+      else narrate "Could not find that spawnpoint."
+      }
+
+dhunger_spawn_list:
+  type: task
+  debug: true
+  script:
+    - narrate "Listing spawnpoints:"
+    - define scount <yaml[dhunger_saves].list_keys[hg.arenas.<player.flag[dhg]>.spawnpoint].size||0>
+    - define counter 1
+    - while <def[counter].is[OR_LESS].than[<def[scount]>]> {
+      - narrate "<&lt><def[counter]><&gt> <yaml[dhunger_saves].read[hg.arenas.<player.flag[dhg]>.spawnpoint.%counter%]>"
+      - define counter <def[counter].add[1]>
+      }
+
+dhunger_spawn_show:
+  type: task
+  debug: true
+  script:
+    - narrate "Showing spawnpoints:"
+    - define scount <yaml[dhunger_saves].list_keys[hg.arenas.<player.flag[dhg]>.spawnpoint].size||0>
+    - define counter 1
+    - while <def[counter].is[OR_LESS].than[<def[scount]>]> {
+      - playeffect <yaml[dhunger_saves].read[hg.arenas.<player.flag[dhg]>.spawnpoint.%counter%]> effect:red_dust qty:15
+      - define counter <def[counter].add[1]>
+      }
+
+dhunger_command_breakable:
+  type: task
+  debug: true
+  script:
+    - if <context.args.get[2].is[==].to[null]||true> && <context.args.get[3].is[==].to[null]||true> { 
+      - narrate "<&6>/dhg breakable add - add block(s) to list"
+      - narrate "<&6>/dhg breakable del - delete block(s) from list"
+      - narrate "<&6>/dhg breakable list - list all blocks"
+      - narrate "<&6>/dhg breakable clear - clear all blocks in list"
+      - queue clear 
+      }
+    - if !<player.has_flag[dhg]> {
+      - narrate "You don't have an arena selected."
+      - queue clear
+      }
+    - define arg2 <context.args.get[2]>
+    - define arg3 <context.args.get[3]>
+    - define settings li@add|del|list|clear
+    - if <def[settings].contains[%arg2%]> {
+      - if <def[arg3].is[==].to[help]> {
+        - inject dhunger_help_breakable_%arg2%
+        }
+        else {
+        - inject dhunger_breakable_%arg2%
+        }
+      }
+      else {
+      - narrate "Invalid setting"
+      }
+
+dhunger_breakable_add:
+  type: task
+  debug: true
+  script:
+    - foreach <el@val[%arg3%].as_list> {
+      - define newmat <el@val[%value%].as_material||null>
+      - if <def[newmat].is[!=].to[null]> {
+        - narrate "%value% is %newmat%"
+        - if !<yaml[dhunger_saves].read[hg.arenas.<player.flag[dhg]>.settings.breakable].contains[%newmat%]> {
+          - yaml id:dhunger_saves set hg.arenas.<player.flag[dhg]>.settings.breakable:->:%newmat%
+          }
+          else {
+          - narrate "Item already in list"
+          }
+        }
+        else {
+        - narrate "%value% is not a valid block or item"
+        }
+      }
+    - inject dhunger_command_save
+
+dhunger_breakable_del:
+  type: task
+  debug: true
+  script:
+    - foreach <def[arg3]> {
+      - define newmat <el@val[%value%].unescaped.as_material||null>
+      - if <def[newmat].is[!=].to[null]> {
+        - narrate "%newmat% is valid"
+        - if <yaml[dhunger_saves].read[hg.arenas.<player.flag[dhg]>.settings.breakable].contains[%newmat%]> {
+          - yaml id:dhunger_saves set hg.arenas.<player.flag[dhg]>.settings.breakable:<-:%newmat%
+          }
+        }
+        else {
+        - narrate "%value% is not a valid block or item"
+        }
+      }
+    - inject dhunger_command_save
+
+dhunger_breakable_list:
+  type: task
+  debug: true
+  script:
+    - if <yaml[dhunger_saves].read[hg.arenas.<player.flag[dhg]>.settings.breakable].size||0> > 0 {
+      - define blocklist <yaml[dhunger_saves].read[hg.arenas.<player.flag[dhg]>.settings.breakable].replace[li@]>
+      - narrate "%blocklist%"
+      }
+
+dhunger_breakable_clear:
+  type: task
+  debug: true
+  script:
+    - yaml id:dhunger_saves set hg.arenas.<player.flag[dhg]>.settings.breakable:!
+    - inject dhunger_breakable_add
+
+dhunger_help_breakable:
+  type: task
+  debug: true
+  script:
+    - narrate "<&6>/dhg breakable <&lt>value<&pipe>value<&pipe>...<&gt>"
+    - narrate "Where <&dq>value<&dq> is a <&pipe> separated list of block or material IDs."
+
+dhunger_command_lock:
+  type: task
+  debug: true
+  script:
+    - 
+    - if <context.args.get[2].is[==].to[null]||true> && !<player.has_flag[dhg]> { 
+      - narrate "<&6>/dhg locked <&lt>Arena ID<&gt>" 
+      - narrate "<&6>Arena ID - ID Number for arena" 
+      - queue clear 
+      }
+    - if !<context.args.get[2].is[==].to[<context.args.get[2].escaped>]> { 
+      - narrate "<&6>That value doesn't look right." 
+      - queue clear 
+      }
+    - define arg2 <context.args.get[2]>
+    - if <yaml[dhunger_saves].list_keys[hg.arenas].contains[%arg2%]> {
+      - yaml id:dhunger_saves set hg.arenas.%arg2%.settings.locked:true
+      - narrate "<&6>Locking arena with name: %arg2%"
+      - inject dhunger_command_save
+      }
+      else narrate "<&6>Arena with that name not found."
+
+dhunger_command_unlock:
+  type: task
+  debug: true
+  script:
+    - 
+    - if <context.args.get[2].is[==].to[null]||true> && !<player.has_flag[dhg]> { 
+      - narrate "<&6>/dhg locked <&lt>Arena ID<&gt>" 
+      - narrate "<&6>Arena ID - ID Number for arena" 
+      - queue clear 
+      }
+    - if !<context.args.get[2].is[==].to[<context.args.get[2].escaped>]> { 
+      - narrate "<&6>That value doesn't look right." 
+      - queue clear 
+      }
+    - define arg2 <context.args.get[2]>
+    - if <yaml[dhunger_saves].list_keys[hg.arenas].contains[%arg2%]> {
+      - yaml id:dhunger_saves set hg.arenas.%arg2%.settings.locked:false
+      - narrate "<&6>Unlocking arena with name: %arg2%"
+      - inject dhunger_command_save
+      }
+      else narrate "<&6>Arena with that name not found."
+
+dhunger_command_enable:
+  type: task
+  debug: true
+  script:
+    - 
+    - if <context.args.get[2].is[==].to[null]||true> && !<player.has_flag[dhg]> { 
+      - narrate "<&6>/dhg enable <&lt>Arena ID<&gt>" 
+      - narrate "<&6>Arena ID - ID Number for arena" 
+      - queue clear 
+      }
+    - if !<context.args.get[2].is[==].to[<context.args.get[2].escaped>]> { 
+      - narrate "<&6>That value doesn't look right." 
+      - queue clear 
+      }
+    - define arg2 <context.args.get[2]>
+    - if <yaml[dhunger_saves].list_keys[hg.arenas].contains[%arg2%]> {
+      - yaml id:dhunger_saves set hg.arenas.%arg2%.settings.enable:true
+      - narrate "<&6>Enabling arena with name: %arg2%"
+      - inject dhunger_command_save
+      }
+      else narrate "<&6>Arena with that name not found."
+    
+dhunger_command_list:
+  type: task
+  debug: true
+  script:
+    - foreach <yaml[dhunger_saves].list_keys[hg.arenas]> {
+      - narrate "<&6>Arena: %value%"
+      }
+    
+dhunger_command_disable:
+  type: task
+  debug: true
+  script:
+    - if <context.args.get[2].is[==].to[null]||true> { 
+      - narrate "<&6>/dhg disable <&lt>Arena ID<&gt>" 
+      - narrate "<&6>Arena ID - ID Number for arena" 
+      - queue clear 
+      }
+    - if !<context.args.get[2].is[==].to[<context.args.get[2].escaped>]> { 
+      - narrate "<&6>That value doesn't look right." 
+      - queue clear 
+      }
+    - define arg2 <context.args.get[2]>
+    - if <yaml[dhunger_saves].list_keys[hg.arenas].contains[%arg2%]> {
+      - yaml id:dhunger_saves set hg.arenas.%arg2%.settings.enable:false
+      - narrate "<&6>Disabling arena with name: %arg2%"
+      - inject dhunger_command_save
+      }
+      else narrate "<&6>Arena with that name not found."
+
+dhunger_command_set:
+  type: task
+  debug: false
+  script:
+    - if <context.args.get[2].is[==].to[null]||true> && <context.args.get[3].is[==].to[null]||true> { 
+      - narrate "<&6>/dhg set <&lt>setting<&gt> <&lt>value<&gt>"
+      - narrate "<&6>setting - setting to change" 
+      - narrate "<&6>value - value to assign to setting" 
+      - queue clear 
+      }
+    - if !<player.has_flag[dhg]> {
+      - narrate "You don't have an arena selected."
+      - queue clear
+      }
+    - define arg2 <context.args.get[2]>
+    - define arg3 <context.args.get[3]>
+    - define settings li@restock|lightning|lightning_delay|countdown|locked
+    - if <def[settings].contains[%arg2%]> {
+      - if <def[arg3].is[==].to[help]> {
+        - inject dhunger_help_set_%arg2%
+        }
+        else {
+        - inject dhunger_setting_%arg2%
+        }
+      }
+      else {
+      - narrate "Invalid setting"
+      - queue clear
+      }
+dhunger_setting_restock:
+  type: task
+  debug: false
+  script:
+    - if <def[arg3].matches[integer]> {
+      - yaml id:dhunger_saves set hg.arenas.arenas.<player.flag[dhg]>.settings.restock:<def[arg3]>
+      - narrate "<&6>Changing RESTOCK on arena <&lt><player.flag[dhg]><&gt> with value: %arg3%"
+      - inject dhunger_command_save
+      }
+      else {
+      - narrate "<&6>Invalid integer value."
+      - narrate "<&6>Set value to amount of time between restocks."
+      - narrate "<&6>Use 0 for no restocking."
+      }
+
+dhunger_setting_min_players:
+  type: task
+  debug: false
+  script:
+    - if <def[arg3].matches[integer]> && <def[arg3].is[OR_MORE].than[2]> {
+      - yaml id:dhunger_saves set hg.arenas.arenas.<player.flag[dhg]>.settings.min_players:<def[arg3]>
+      - narrate "<&6>Changing MIN_PLAYERS on arena <&lt><player.flag[dhg]><&gt> with value: %arg3%"
+      - inject dhunger_command_save
+      }
+      else {
+      - narrate "<&6>Invalid integer value."
+      - narrate "<&6>Set value to minimum amount of players to start a game."
+      - narrate "<&6>Default minimum is 2."
+      }
+
+dhunger_setting_max_players:
+  type: task
+  debug: false
+  script:
+    - if <def[arg3].matches[integer]> && <def[arg3].is[OR_MORE].than[<yaml[dhunger_saves].read[hg.arenas.arenas.<player.flag[dhg]>.settings.min_players]> {
+      - yaml id:dhunger_saves set hg.arenas.arenas.<player.flag[dhg]>.settings.restock:<def[arg3]>
+      - narrate "<&6>Changing RESTOCK on arena <&lt><player.flag[dhg]><&gt> with value: %arg3%"
+      - inject dhunger_command_save
+      }
+      else {
+      - narrate "<&6>Invalid integer value."
+      - narrate "<&6>Set value to amount of time between restocks."
+      - narrate "<&6>Use 0 for no restocking."
+      }
+
+dhunger_setting_lightning:
+  type: task
+  debug: false
+  script:
+    - define allowed li@always|2|off
+    - if <def[allowed].contains[%arg3%]> {
+      - yaml id:dhunger_saves set hg.arenas.<player.flag[dhg]>.settings.lightning:%arg3%
+      - narrate "<&6>Changing LIGHTNING on arena <&lt><player.flag[dhg]><&gt> with value: %arg3%"
+      - inject dhunger_command_save
+      }
+      else {
+      - narrate "<&6>Invalid assignment value"
+      - narrate "<&6>Available values are: always, 2 or off"
+      - narrate "<&6>Always = Use lightning through the whole game"
+      - narrate "<&6>2 = Use lightning when game is down to 2 players"
+      - narrate "<&6> off = Don't use lightning at all"
+      }
+
+dhunger_setting_lightning_delay:
+  type: task
+  debug: false
+  script:
+    - if <def[arg3].is[matches].to[integer]> { 
+      - yaml id:dhunger_saves set hg.arenas.<player.flag[dhg]>.settings.lightning_delay:%arg3%
+      - narrate "<&6>Changing LIGHTNING_DELAY on arena <&lt><player.flag[dhg]><&gt> with value: %arg3%"
+      - inject dhunger_command_save
+      }
+      else {
+      - narrate "<&6>Invalid assignment value"
+      - narrate "<&6>Available values are numbers > 0 "
+      - narrate "<&6>Number = Seconds between lightning strikes."
+      }
+
+dhunger_setting_countdown:
+  type: task
+  debug: false
+  script:
+    - if <def[arg3].is[matches].to[integer]> { 
+      - yaml id:dhunger_saves set hg.arenas.<player.flag[dhg]>.settings.countdown:%arg3%
+      - narrate "<&6>Changing COUNTDOWN on arena <&lt><player.flag[dhg]><&gt> with value: %arg3%"
+      - inject dhunger_command_save
+      }
+      else {
+      - narrate "<&6>Invalid assignment value"
+      - narrate "<&6>Available values are numbers > 0 "
+      - narrate "<&6>Number = Seconds to countdown at start of game."
+      - narrate "<&6>Default is 10"
+      }
+
+dhunger_command_board:
+  type: task
+  debug: false
+  script:
+    - if <context.args.get[2].is[==].to[null]||true> { 
+      - narrate "<&6>/dhg board <&lb>add<&rb><&pipe><&lb>del<&rb>
+      - queue clear 
+      }
+    - if !<player.has_flag[dhg]> {
+      - narrate "You don't have an arena selected."
+      - queue clear
+      }
+    - define arg2 <context.args.get[2]>
+    - define settings li@add|del
+    - if <def[settings].contains[%arg2%]> {
+      - if <def[arg2].is[==].to[help]> inject dhunger_help_board_%arg2%
+        else inject dhunger_board_%arg2%
+      }
+      else {
+      - narrate "Invalid setting"
+      - queue clear
+      }
+      
+dhunger_board_add:
+  type: task
+  debug: false
+  script:
+    - if !<player.has_flag[dhg]> {
+      - narrate "You don't have an arena selected."
+      - queue clear
+      }
+    - define signs <player.selected_region.get_blocks.filter[material.bukkit_enum.is[==].to[wall_sign]]||0>
+    - if <def[signs].size.is[OR_MORE].to[3]> {
+      - narrate "Found your sign"
+      - define sdir <def[signs].get[1].material.data>
+      - define slist li@<def[signs].get[1]>
+      - define signs <def[signs].remove[1]>
+      - narrate "Direction %sdir%"
+      # West
+      - foreach %signs% {
+        - define nsign %value%
+        - define found false
+        - foreach <def[slist]> {
+          - if <def[nsign].as_location.y.is[MORE].than[<def[value].as_location.y>]> {
+            - define slist <def[slist].insert[%nsign%].at[<def[loop_index]>]>
+            - define found true
+            - foreach stop
+            }
+            # West Facing
+            else if <def[sdir].is[==].to[4]> {
+            - if <def[nsign].as_location.z.is[LESS].than[<def[value].as_location.z>]> {
+              - define slist <def[slist].insert[%nsign%].at[<def[loop_index]>]>
+              - define found true
+              - foreach stop
+              }
+            }
+            # East Facing
+            else if <def[sdir].is[==].to[5]> {
+            - if <def[nsign].as_location.z.is[MORE].than[<def[value].as_location.z>]> {
+              - define slist <def[slist].insert[%nsign%].at[<def[loop_index]>]>
+              - define found true
+              - foreach stop
+              }
+            }
+            # North Facing
+            else if <def[sdir].is[==].to[2]> && <def[nsign].as_location.y.is[==].than[<def[value].as_location.y>]> {
+            - if <def[nsign].as_location.x.is[MORE].than[<def[value].as_location.x>]> {
+              - define slist <def[slist].insert[%nsign%].at[<def[loop_index]>]>
+              - define found true
+              - foreach stop
+              }
+            }
+            # South Facing
+            else if <def[sdir].is[==].to[3]> {
+            - if <def[nsign].as_location.x.is[LESS].than[<def[value].as_location.x>]> {
+              - define slist <def[slist].insert[%nsign%].at[<def[loop_index]>]>
+              - define found true
+              - foreach stop
+              }
+            }
+          }
+        - if !<def[found]> {
+          - if <def[sdir].is[==].to[4]> || <def[sdir].is[==].to[3]> {
+            - define slist <def[slist].insert[%nsign%].at[<def[slist].size.add[1]>]>
+            }
+            else {
+            - define slist <def[slist].insert[%nsign%].at[<def[slist].size>]>
+            }
+          }
+        }
+      - yaml id:dhunger_saves set hg.arenas.<player.flag[dhg]>.board:%slist%
+      - inject dhunger_command_save
+      - define arena <player.flag[dhg]>
+      - inject dhunger_task_reset_sign
+      - narrate "row1 <def[slist].get[1].to[3]>"
+      - narrate "row2 <def[slist].get[4].to[6]>"
+      - narrate "row3 <def[slist].get[7].to[9]>"
+      }
+      else {
+      - narrate "sign wall missing or not big enough"
+      }
+
+dhunger_board_del:
+  type: task
+  debug: false
+  script:
+    - if !<player.has_flag[dhg]> {
+      - narrate "You don't have an arena selected."
+      - queue clear
+      }
+    - yaml id:dhunger_saves set hg.arenas.<player.flag[dhg]>.board:!
+    - inject dhunger_command_save
+    - narrate "The board in arena <player.flag[dhg]> was removed."
+
+dhunger_command_lobby:
+  type: task
+  debug: false
+  script:
+    - yaml id:dhunger_saves set hg.lobby:l@<player.location.block.x.add[.5]>,<player.location.block.y>,<player.location.block.z.add[.5]>,<player.location.pitch>,<player.location.yaw>,<player.location.world.name>
+    - inject dhunger_command_save
+
+dhunger_init_signs:
+  type: task
+  debug: true
+  script:
+    - foreach <yaml[dhunger_saves].list_keys[hg.arenas]> {
+      - define arena %value%
+      - inject dhunger_task_reset_sign
+      }
+
+dhunger_task_reset_sign:
+  type: task
+  debug: false
+  script:
+    - define sign <yaml[dhunger_saves].read[hg.arenas.%arena%.board]||false>
+    - if <def[sign]> != false {
+      # Set panel 1
+      - sign type:automatic "Hunger Game|%arena%|<&lt>Click to Join<&gt>" <def[sign].get[1]>
+      # Set panel 2
+      - sign type:automatic "%arena%|<&2>0<&0>/<&4>0<&0>/<&0><yaml[dhunger_saves].read[hg.arenas.%arena%.max_players].get[1]||20>" <def[sign].get[2]>
+      # Clear remaining boards
+      - foreach <def[sign].get[3].to[<def[sign].size>]> {
+        - sign type:automatic "%loop_index%" %value%
+        }
+      }
+
+dhunger_join:
+  type: task
+  debug: true
+  script:
+    - narrate "Joining game"
+    - define spawnpoints <yaml[dhunger_saves].list_keys[hg.arenas.<player.flag[dhg]>.spawnpoint].numerical>
+    - define order <yaml[dhunger_saves].read[hg.arenas.<player.flag[dhg]>.settings.order]||ordered>
+    - define ingame false
+    - if <def[order].matches[random]> {
+      - while <def[spawnpoints].size.is[>].than[0]> {
+        - define randomnum <util.random[1].to[<def[spawnpoints].size>]>
+        - define spawnpt <yaml[dhunger_saves].read[hg.arenas.<player.flag[dhg]>.spawnpoint.<def[spawnpoints].get[%randomnum%]>]>
+        - if <def[spawnpt.find.players.within[1]> define spawnpoints <def[spawnpoints].remove[%randomnum%]>
+          else {
+          - define ingame true
+          - while stop
+          }
+        }
+      }
+      else {
+      - foreach %spawnpoints% {
+        - define spawnpt <yaml[dhunger_saves].read[hg.arenas.<player.flag[dhg]>.spawnpoint.%value%]>
+        - define empty <def[spawnpt].find.players.within[1].size>
+        - if %empty% > 0 {
+          - foreach next
+          }
+          else {
+          - define ingame true
+          - foreach stop
+          }
+        }
+      }
+    - if !<def[ingame]> {
+      - narrate "Game spawns are full"
+      }
+      else {
+      - define barricade li@
+      - foreach li@0|1|2 {
+        - define y %value%
+        - foreach li@-1|0|1 {
+          - define x %value%
+          - foreach li@-1|0|1 {
+            - define z %value%
+            - if %x% == 0 && %z% == 0 {
+              - narrate "middle block"
+              - foreach next
+              }
+            - define block <def[spawnpt].add[%x%,%y%,%z%]>
+            - if <def[block].material.is[==].to[m@air]> {
+              - define barricade <def[barricade].insert[%block%].at[1]>
+              }
+            }
+          }
+        }
+      - modifyblock %barricade% m@glass no_physics
+      - teleport <player> %spawnpt%
+      }
