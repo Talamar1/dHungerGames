@@ -93,7 +93,7 @@ Hunger:
     on player killed:
     - if <player.has_flag[dhg.play]> {
       - define arena <player.flag[dhg.play]>
-      - narrate "<context.entity.name> was killed by <tern[<context.damager.is_player>]:<context.damager.name>||<context.cause>>" targets:<server.flag[dhg.%arena%.players]>
+      - narrate "<context.entity.name> was killed by <tern[<context.damager.is_player>]:<context.damager.name>||<context.cause>>" targets:<server.flag[dhg.%arena%.players].as_list>
       - inject dhunger_remove_player
       - run dhunger_check_end_of_game def:%arena% instantly
       - determine cancelled
@@ -264,7 +264,7 @@ dhunger_command_quit:
       }
     - define arena <player.flag[dhg.play]>
     - narrate "Quitting arena game."
-    - narrate "<player.name> quit the arena." targets:<server.flag[dhg.%arena%.players]>
+    - narrate "<player.name> quit the arena." targets:<server.flag[dhg.%arena%.players].as_list>
     - inject dhunger_remove_player
     - run dhunger_check_end_of_game def:%arena%
 
@@ -894,7 +894,7 @@ dhunger_init_signs:
 
 dhunger_join:
   type: task
-  debug: true
+  debug: false
   script:
     - narrate "Joining game"
     - define arena <player.flag[dhg.play]>
@@ -937,14 +937,14 @@ dhunger_join:
       - inject dhunger_task_barricade
       - teleport <player> %spawnpt%
       - adjust <player> gamemode:survival
+      - narrate "<player.name> is joining the game." targets:<server.flag[dhg.%arena%.players].exclude[<player>]>
+      - inject dhunger_board_reset
       - if <server.has_flag[dhg.%arena%.timer]> {
         - flag server dhg.%arena%.timer:<yaml[dhunger_saves].read[dhg.arenas.%arena%.settings.timer]||30>
-        - narrate "<player.name> is joining the game." targets:<server.flag[dhg.%arena%.players]>
         }
         else {
         - run dhunger_task_checkstart def:%arena%
         }
-      - inject dhunger_board_reset
       }
 
 dhunger_task_checkstart:
@@ -969,18 +969,18 @@ dhunger_task_checkstart:
         }
       - if <def[steps].contains[<server.flag[dhg.%arena%.timer].as_int>]> {
         - if <server.flag[dhg.%arena%.players].size> >= <yaml[dhunger_saves].read[dhg.arenas.%arena%.settings.min_player]||2> {
-          - narrate "Game will start in: <server.flag[dhg.%arena%.timer].as_int> seconds" targets:<server.flag[dhg.%arena%.players]>
+          - narrate "Game will start in: <server.flag[dhg.%arena%.timer].as_int> seconds" targets:<server.flag[dhg.%arena%.players].as_list>
           }
           else {
-          - narrate "Waiting for players...<server.flag[dhg.%arena%.timer].as_int> seconds to go." targets:<server.flag[dhg.%arena%.players]>
+          - narrate "Waiting for players...<server.flag[dhg.%arena%.timer].as_int> seconds to go." targets:<server.flag[dhg.%arena%.players].as_list>
           }
         }
         else if <server.flag[dhg.%arena%.timer].is[or_less].than[0]> {
         - if <server.flag[dhg.%arena%.players].size.is[less].than[<yaml[dhunger_saves].read[dhg.arenas.%arena%.settings.min_player]||2>]> {
-          - foreach <server.flag[dhg.%arena%.players]> {
+          - foreach <server.flag[dhg.%arena%.players].as_list> {
             - run dhunger_remove_player player:%value%
             }
-          - narrate "Not enough players, cancelling game" targets:<server.flag[dhg.%arena%.players]>
+          - narrate "Not enough players, cancelling game" targets:<server.flag[dhg.%arena%.players].as_list>
           - run dhunger_check_end_of_game def:%arena%
           - flag server dhg.%arena%:!
           - while stop
@@ -998,16 +998,17 @@ dhunger_game_start:
   script:
     - define arena %1%
     - repeat <yaml[dhunger_saves].read[dhg.arenas.%arena%.settings.countdown]||10> {
-      - narrate "Beginning in <red>%value%" targets:<server.flag[dhg.%arena%.players]>
+      - define count <yaml[dhunger_saves].read[dhg.arenas.%arena%.settings.countdown]||10.sub[value].add[1]>
+      - narrate "Beginning in <red>%count%" targets:<server.flag[dhg.%arena%.players].as_list>
       - wait 1s
       }
     - run dhunger_stock_chests def:%arena%
     - define state down
-    - foreach <server.flag[dhg.%arena%.players]> {
+    - foreach <server.flag[dhg.%arena%.players].as_list> {
       - define spawnpt <def[value].location.block>
       - inject dhunger_task_barricade
       }
-    - narrate "<green>GO!" targets:<server.flag[dhg.%arena%.players]>
+    - narrate "<green>GO!" targets:<server.flag[dhg.%arena%.players].as_list>
 
 dhunger_remove_inventory:
   type: task
@@ -1037,7 +1038,9 @@ dhunger_remove_player:
   type: task
   debug: false
   script:
+    - wait 1t
     - drop <player.inventory.list_contents>
+    - define arena <player.flag[dhg.play]>
     - teleport <player> <yaml[dhunger_saves].read[dhg.lobby]||<player.location.world.spawn_location>>
     - inject dhunger_replace_inventory
     - flag server dhg.%arena%.dead:->:<player.name>
@@ -1057,7 +1060,7 @@ dhunger_check_end_of_game:
     - narrate "End of game"
     - if <server.get_online_players_flagged[dhg.play].filter[flag[dhg.play].is[==].to[%arena%]].size.is[==].to[1]> {
       - define winner <server.get_online_players_flagged[dhg.play].filter[flag[dhg.play].is[==].to[%arena%]].get[1]>
-      - run dhunger_remove_player player:%winner%
+      - run dhunger_remove_player player:%winner% instantly
       - announce "<green><def[winner].name> has won the hunger game in %arena%"
       }
     - run dhunger_task_block_rollback def:%arena%
@@ -1092,7 +1095,7 @@ dhunger_stock_chests:
 
 dhunger_task_block_track:
   type: task
-  debug: true
+  debug: false
   script:
     - define action %1%
     - define arena %2%
