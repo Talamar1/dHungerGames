@@ -969,11 +969,11 @@ dhunger_join:
         - flag server dhg.%arena%.timer:<yaml[dhunger_saves].read[dhg.arenas.%arena%.settings.timer]||30>
         }
         else {
-        - run dhunger_task_checkstart def:%arena%
+        - run dhunger_game_check_start def:%arena%
         }
       }
 
-dhunger_task_checkstart:
+dhunger_game_check_start:
   type: task
   debug: false
   script:
@@ -1011,7 +1011,7 @@ dhunger_task_checkstart:
           - flag server dhg.%arena%:!
           - while stop
           }
-        - run dhunger_game_start def:%arena% instantly
+        - run dhunger_game_start def:%arena%
         - while stop
         }
       - flag server dhg.%arena%.timer:--
@@ -1037,6 +1037,9 @@ dhunger_game_start:
       - inject dhunger_task_barricade
       }
     - narrate "<green>GO!" targets:<server.flag[dhg.%arena%.players].as_list||li@>
+    - if <yaml[dhunger_saves].read[dhg.arenas.%arena%.settings.lightning]||2> == always {
+      - run dhunger_game_lightning def:%arena%
+      }
 
 dhunger_remove_inventory:
   type: task
@@ -1070,6 +1073,12 @@ dhunger_remove_player:
     - drop <player.inventory.list_contents>
     - define arena <player.flag[dhg.play]>
     - teleport <player> <yaml[dhunger_saves].read[dhg.lobby]||<player.location.world.spawn_location>>
+    - define sound <tern[<yaml[dhunger_saves].contains[dhg.arena.%arena%.settings.sound]>]:<yaml[dhunger_saves].read[dhg.arena.%arena%.settings.sound]>||FIREWORK_LARGE_BLAST>
+    - if <def[sound].contains[custom]> playsound <server.flag[dhg.%arena%.players].as_list||li@> sound:%sound% volume:10 custom
+      else playsound <server.flag[dhg.%arena%.players].as_list||li@> sound:%sound% volume:10
+    - if <yaml[dhunger_saves].read[dhg.arenas.%arena%.settings.lightning]||2> == 2 {
+      - run dhunger_game_lightning def:%arena%
+      }
     - inject dhunger_replace_inventory
     - flag server dhg.%arena%.dead:->:<player.name>
     - inject dhunger_board_reset
@@ -1179,3 +1188,15 @@ dhunger_task_barricade:
         }
       }
     - if <def[barricade].size.is[more].than[0]> modifyblock %barricade% <tern[<def[state].is[==].to[down]>]:m@air||%blocktype%> no_physics
+dhunger_game_lightning:
+  type: task
+  debug: true
+  script:
+    - define arena %1%
+    - define timer <yaml[dhunger_saves].read[dhg.arenas.%arena%.settings.lightning_delay]||60>
+    - while <server.flag[dhg.%arena%.started]> {
+      - foreach <server.get_online_players_flagged[dhg.play].filter[flag[dhg.play].is[==].to[%arena%]]> {
+        - strike no_damage <def[value].location>
+        }
+      - wait %timer%
+      }
