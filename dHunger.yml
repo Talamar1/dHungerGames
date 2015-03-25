@@ -230,7 +230,7 @@ dhunger_command_save:
   type: task
   debug: false
   script:
-    - ^if <player.is_online> narrate "Saving Hunger Games"
+#    - ^if <player.is_online> narrate "Saving Hunger Games"
     - ^yaml savefile:dhunger_saves.yml id:dhunger_saves
 
 dhunger_command_delete:
@@ -451,7 +451,7 @@ dhunger_command_tier:
       - queue clear
       }
     - define arena <player.flag[dhg.edit]>
-    - if %arg2% == help || ( li@add|del contains %arg2% && <def[arg3].size> <= 0 ) { 
+    - if %arg2% == help || ( li@add|del contains %arg2% && <def[arg3].as_list.size> <= 0 ) { 
       - narrate "<gold>/dhg tier<&lb>1<&pipe>2<&rb> (add<&pipe>del) (item)(<&pc>percent)(<&ns>qty)"
       - narrate "<gold><&sp><&sp><&sp>1 or 2 <green>the tier you want to modify"
       - narrate "<gold><&sp><&sp><&sp>add or del <green>(optional<&cm> leaving it out overwites the whole list)"
@@ -476,16 +476,14 @@ dhunger_command_tier:
       - queue clear
       }
     - foreach %arg3% {
-      - define newitem <el@val[%value%].before[%].before[#].as_item||null>
+      - define newitem <el@val[%value%].before[%].before[#].as_item||1>
       - define percent <el@val[%value%].after[%].before[#].as_int||25>
       - define qty <el@val[%value%].after[#].before[%].as_int||1>
       - if <def[newitem].is[!=].to[null]> {
         - narrate "%value% is %newitem% at %percent% qty %qty%"
+        - yaml id:dhunger_saves set dhg.arenas.%arena%.settings.%arg1%.%newitem%:!
         - if %arg2% == add {
           - yaml id:dhunger_saves set dhg.arenas.%arena%.settings.%arg1%.%newitem%:|:%percent%|%qty%
-          }
-          else {
-          - yaml id:dhunger_saves set dhg.arenas.%arena%.settings.%arg1%.%newitem%:!
           }
         }
         else {
@@ -1183,8 +1181,8 @@ dhunger_check_end_of_game:
       }
     - ^run dhunger_task_block_rollback def:%arena%
     - ^remove <cu@dhg_%arena%.list_entities[dropped_item]>
-    - queue dhg_lightning_%arena% stop
-    - queue dhg_restock_%arena% stop
+    - if <queue.exists[dhg_lightning_%arena%]> queue dhg_lightning_%arena% stop
+    - if <queue.exists[dhg_restock_%arena%]> queue dhg_restock_%arena% stop
     - ^flag server dhg.%arena%:!
     - inject dhunger_board_reset
     - announce "Finished end_of_game"
