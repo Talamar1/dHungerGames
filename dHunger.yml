@@ -3,15 +3,15 @@
 # Arenas are stored in dHungers_saves.yml and it is editable and reloadable.
 # Created by Talamar1
 
-Hunger:
+dHunger:
   type: world
   debug: false
   events:
     on server start:
-    - run InitdHunger delay:5t
+    - run dhunger_task_init delay:5t
 
     on shutdown:
-    - run InitdHunger delay:1t
+    - run dhunger_task_init delay:1t
     
     on player clicks wall_sign:
     - define sign <context.location.block>
@@ -107,12 +107,7 @@ Hunger:
       - if <context.location.is_within[cu@dhg_%value%]> && <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> determine cancelled
       }
       
-    on entity spawns in notable cuboid:
-    - foreach <yaml[dhunger_saves].list_keys[dhg.arenas].exclude[default]> {
-      - if <context.location.is_within[cu@dhg_%value%]> && <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> && <yaml[dhunger_saves].contains[dhg.arenas.%value%.settings.spawnable].as_list||li@> !contains <context.entity> determine cancelled
-      }
-      
-InitdHunger:
+dhunger_task_init:
   type: task
   debug: false
   script:
@@ -122,7 +117,7 @@ InitdHunger:
       - run dhunger_check_end_of_game def:%value%
       }
 
-hunger_dhg:
+dhunger_dhg:
   type: command
   debug: false
   name: dhg
@@ -136,11 +131,11 @@ hunger_dhg:
       - queue clear
       }
     - define arg1 <context.args.get[1].escaped>
-    - define cmdList li@create|save|delete|spawn|rename|set|breakable|placeable|lock|unlock|resize|board|disable|enable|start|stop|quit|select|list|clear|reload|lobby|vote|tier1|tier2|reset_default|join
+    - define cmdList li@create|save|delete|spawn|rename|set|breakable|placeable|lock|unlock|resize|board|disable|enable|start|stop|quit|select|list|clear|reload|lobby|vote|tier1|tier2|reset_default|join|spawnable
     - if <def[cmdList].contains[%arg1%]> {
       - if <context.server> || <player.has_permission[dhunger.%arg1%]||false> {
-        - if %arg1% == placeable || %arg1% == breakable inject dhunger_command_blockmgmt
-          else if li@tier1||tier2 contains %arg1% inject dhunger_command_tier
+        - if li@placeable|breakable contains %arg1% inject dhunger_command_blockmgmt
+          else if li@tier1|tier2 contains %arg1% inject dhunger_command_tier
           else inject dhunger_command_%arg1%
         - queue clear
         }
@@ -198,29 +193,16 @@ dhunger_command_create:
       - narrate "<&6>Arena with that name already exists."
       - queue clear
       }
-    - if <player.selected_region.is[==].to[null]||true> { 
+    - if li@help|false|true|null contains %arg2% {
+      - narrate "<&6>That is not a valid arena name."
+      - queue clear
+      }
+      - if <player.selected_region.is[==].to[null]||true> { 
       - narrate "<&6>You don't have an area selected with WorldEdit wand." 
       - queue clear 
       }
     - narrate "Creating new arena"
-    - yaml id:dhunger_saves set dhg.arenas.%arg2%.cuboid:<player.selected_region>
-    - yaml id:dhunger_saves set dhg.arenas.%arg2%.settings.max_players:<yaml[dhunger_saves].read[dhg.arenas.default.settings.max_players]>
-    - yaml id:dhunger_saves set dhg.arenas.%arg2%.settings.min_players:<yaml[dhunger_saves].read[dhg.arenas.default.settings.min_players]>
-    - yaml id:dhunger_saves set dhg.arenas.%arg2%.settings.lightning:<yaml[dhunger_saves].read[dhg.arenas.default.settings.lightning]>
-    - yaml id:dhunger_saves set dhg.arenas.%arg2%.settings.lightning_delay:<yaml[dhunger_saves].read[dhg.arenas.default.settings.lightning_delay]>
-    - yaml id:dhunger_saves set dhg.arenas.%arg2%.settings.placeable:|:<yaml[dhunger_saves].read[dhg.arenas.default.settings.placeable]||li@>
-    - yaml id:dhunger_saves set dhg.arenas.%arg2%.settings.breakable:|:<yaml[dhunger_saves].read[dhg.arenas.default.settings.breakable]||li@>
-    - yaml id:dhunger_saves set dhg.arenas.%arg2%.settings.locked:<yaml[dhunger_saves].read[dhg.arenas.default.settings.locked]>
-    - yaml id:dhunger_saves set dhg.arenas.%arg2%.settings.enable:<yaml[dhunger_saves].read[dhg.arenas.default.settings.enable]>
-    - yaml id:dhunger_saves set dhg.arenas.%arg2%.settings.timer:<yaml[dhunger_saves].read[dhg.arenas.default.settings.timer]>
-    - yaml id:dhunger_saves set dhg.arenas.%arg2%.settings.countdown:<yaml[dhunger_saves].read[dhg.arenas.default.settings.countdown]>
-    - yaml id:dhunger_saves set dhg.arenas.%arg2%.settings.restock:<yaml[dhunger_saves].read[dhg.arenas.default.settings.restock]>
-    - foreach <yaml[dhunger_saves].list_keys[dhg.arenas.default.settings.tier1]||li@> {
-      - yaml id:dhunger_saves set dhg.arenas.%arg2%.settings.tier1.%value%:<yaml[dhunger_saves].read[dhg.arenas.default.settings.tier1.%value%]>
-      }
-    - foreach <yaml[dhunger_saves].list_keys[dhg.arenas.default.settings.tier2]||li@> {
-      - yaml id:dhunger_saves set dhg.arenas.%arg2%.settings.tier2.%value%:<yaml[dhunger_saves].read[dhg.arenas.default.settings.tier2.%value%]>
-      }
+    - run dhunger_task_yaml_copy def:dhg.arenas.default|dhg.arenas.%arg2% instantly
     - inject dhunger_command_save
     - note <player.selected_region> as:dhg_%arg2%
     - flag player dhg.edit:%arg2%
@@ -237,7 +219,7 @@ dhunger_command_delete:
   type: task
   debug: false
   script:
-    - define arena <context.arg[2]||<player.flag[dhg.edit]>||help>
+    - define arena <context.args.get[2]||<player.flag[dhg.edit]||<def[1]||help>>>
     - if %arena% == help {
       - narrate "<&6>/dhg delete <&lt>Arena Name<&gt>" 
       - narrate "<&6>Either select an arena or provide an arena name" 
@@ -250,6 +232,7 @@ dhunger_command_delete:
     - narrate "Deleting selected arena."
     - yaml id:dhunger_saves set dhg.arenas.%arena%:!
     - flag player dhg.edit:!
+    - note remove as:dhg_%arena%
     - inject dhunger_command_save
 
 dhunger_command_reset_default:
@@ -257,16 +240,72 @@ dhunger_command_reset_default:
   debug: false
   script:
     - narrate "Setting up default arena values."
-    - yaml id:dhunger_saves set dhg.arenas.default:!
-    - yaml id:dhunger_saves set dhg.arenas.default.settings.max_players:20
-    - yaml id:dhunger_saves set dhg.arenas.default.settings.min_players:2
-    - yaml id:dhunger_saves set dhg.arenas.default.settings.lightning:2
-    - yaml id:dhunger_saves set dhg.arenas.default.settings.lightning_delay:60
-    - yaml id:dhunger_saves set dhg.arenas.default.settings.locked:false
-    - yaml id:dhunger_saves set dhg.arenas.default.settings.enable:false
-    - yaml id:dhunger_saves set dhg.arenas.default.settings.timer:30
-    - yaml id:dhunger_saves set dhg.arenas.default.settings.countdown:10
-    - yaml id:dhunger_saves set dhg.arenas.default.settings.restock:0
+    - ^yaml id:dhunger_saves set dhg.arenas.default:!
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.max_players:20
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.min_players:2
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.lightning:2
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.lightning_delay:60
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.locked:false
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.enable:false
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.timer:30
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.countdown:10
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.restock:0
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.placeable:|:m@melon_block|m@tnt|m@cake
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.spawnable:|:e@bat|e@pig|e@squid|e@villager|e@rabbit|e@sheep|e@cow|e@horse|e@chicken|e@donkey|e@wolf|e@ocelot|e@mule
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@leather_chestplate:|:25|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@carrot:|:25|5
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@rabbit:|:15|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@stone_sword:|:20|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@fishing_rod:|:25|3
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@iron_ingot:|:15|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@feather:|:20|5
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@gold_sword:|:15|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@wood_sword:|:25|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@pork:|:25|3
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@stick:|:25|5
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@leather_helmet:|:25|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@raw_beef:|:20|4
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@leather_boots:|:25|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@string:|:25|5
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@arrow:|:25|5
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@flint:|:15|5
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@leather_leggings:|:25|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@cookie:|:5|2
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@raw_fish:|:15|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@gold_ingot:|:10|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@raw_chicken:|:20|4
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@potato:|:15|5
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@bow:|:25|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@apple:|:25|3
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@pumpkin_pie:|:5|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier1.i@baked_potato:|:15|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@cooked_chicken:|:20|2
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@cake:|:15|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@ender_pearl:|:20|2
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@cooked_rabbit:|:10|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@chainmail_chestplate:|:15|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@grilled_pork:|:20|3
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@gold_boots:|:20|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@melon_block:|:15|4
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@gold_leggings:|:20|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@iron_leggings:|:15|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@mushroom_soup:|:20|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@chainmail_helmet:|:15|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@iron_chestplate:|:15|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@nether_warts:|:5|5
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@iron_boots:|:15|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@diamond:|:5|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@chainmail_boots:|:15|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@flint_and_steel:|:15|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@golden_apple:|:10|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@golden_carrot:|:5|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@glass_bottle:|:10|5
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@iron_helmet:|:15|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@gold_helmet:|:20|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@gold_chestplate:|:20|1
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@cooked_beef:|:20|2
+    - ^yaml id:dhunger_saves set dhg.arenas.default.settings.tier2.i@chainmail_leggings:|:15|1
+    - narrate "Finished setting up Default File."
     - inject dhunger_command_save
 
 dhunger_command_reload:
@@ -308,7 +347,7 @@ dhunger_command_select:
       }
     - define arg2 <context.args.get[2]>
     - if <yaml[dhunger_saves].list_keys[dhg.arenas].contains[%arg2%]> {
-      - narrate "<&6>Selecting arena with name: %arg2%"
+      - narrate "<&6>Selecting arena with name<&co> %arg2%"
       - flag player dhg.edit:%arg2%
       }
       else {
@@ -451,7 +490,7 @@ dhunger_command_tier:
       - queue clear
       }
     - define arena <player.flag[dhg.edit]>
-    - if %arg2% == help || ( li@add|del contains %arg2% && <def[arg3].as_list.size> <= 0 ) { 
+    - if %arg2% == help || ( li@add|del contains %arg2% && <def[arg3].as_list.size> <= 0 ) || ( li@add|del|list|clear|help !contains %arg2% ) { 
       - narrate "<gold>/dhg tier<&lb>1<&pipe>2<&rb> (add<&pipe>del) (item)(<&pc>percent)(<&ns>qty)"
       - narrate "<gold><&sp><&sp><&sp>1 or 2 <green>the tier you want to modify"
       - narrate "<gold><&sp><&sp><&sp>add or del <green>(optional<&cm> leaving it out overwites the whole list)"
@@ -460,6 +499,7 @@ dhunger_command_tier:
       - narrate "<gold><&sp><&sp><&sp><&ns>value <green>the max quantity to be in a chest (optional<&cm> default 1)"
       - narrate "<gold>/dhg tier<&lb>1<&pipe>2<&rb> list"
       - narrate "<gold>/dhg tier<&lb>1<&pipe>2<&rb> clear"
+      - queue clear
       }
       else if %arg2% == clear {
       - yaml id:dhunger_saves set dhg.arenas.%arena%.settings.%arg1%:!
@@ -476,7 +516,7 @@ dhunger_command_tier:
       - queue clear
       }
     - foreach %arg3% {
-      - define newitem <el@val[%value%].before[%].before[#].as_item||1>
+      - define newitem <el@val[%value%].before[%].before[#].as_item||null>
       - define percent <el@val[%value%].after[%].before[#].as_int||25>
       - define qty <el@val[%value%].after[#].before[%].as_int||1>
       - if <def[newitem].is[!=].to[null]> {
@@ -488,6 +528,52 @@ dhunger_command_tier:
         }
         else {
         - narrate "%newitem% is not a valid item"
+        }
+      }
+    - inject dhunger_command_save
+
+dhunger_command_spawnable:
+  type: task
+  debug: true
+  script:
+    - define arg2 <context.args.get[2]||help>
+    - define arg3 <context.args.get[3]||li@>
+    - if !<player.has_flag[dhg.edit]> {
+      - narrate "You don't have an arena selected."
+      - queue clear
+      }
+    - define arena <player.flag[dhg.edit]>
+    - if %arg2% == help || ( li@add|del contains %arg2% && <def[arg3].as_list.size> <= 0 ) || ( li@add|del|list|clear|help !contains %arg2% ) { 
+      - narrate "<gold>/dhg spawnable (add<&pipe>del) (entity|entity)"
+      - narrate "<gold><&sp><&sp><&sp>entity <green>the creature to allow spawning"
+      - narrate "<gold>/dhg spawnable list"
+      - narrate "<gold>/dhg spawnable clear"
+      - queue clear
+      }
+      else if %arg2% == clear {
+      - yaml id:dhunger_saves set dhg.arenas.%arena%.settings.spawnable:!
+      - inject dhunger_command_save
+      - queue clear
+      }
+      else if %arg2% == list {
+      - narrate "Spawnable item list"
+      - if <yaml[dhunger_saves].contains[dhg.arenas.%arena%.settings.spawnable].not> queue clear
+      - foreach <yaml[dhunger_saves].read[dhg.arenas.%arena%.settings.spawnable]> {
+        - narrate "<gold><&sp><&sp><&sp><def[value]>"
+        }
+      - queue clear
+      }
+    - foreach %arg3% {
+      - define entity <el@val[%value%].as_entity||false>
+      - if <def[entity].is[!=].to[false]> {
+        - narrate "%value% is %entity%"
+        - yaml id:dhunger_saves set dhg.arenas.%arena%.settings.spawnable:<-:%entity%
+        - if %arg2% == add {
+          - yaml id:dhunger_saves set dhg.arenas.%arena%.settings.spawnable:->:%entity%
+          }
+        }
+        else {
+        - narrate "%entity% is not a valid item"
         }
       }
     - inject dhunger_command_save
@@ -589,7 +675,32 @@ dhunger_command_rename:
   type: task
   debug: false
   script:
-    - inject dhunger_command_save
+    - if <context.args.get[2].is[==].to[null]||true> || <context.args.get[3].is[==].to[null]||true> { 
+      - narrate "<&6>/dhg select <&lt>arena name<&gt>" 
+      - narrate "<&6>arena name - name for your arena" 
+      - queue clear 
+      }
+    - if <context.args.get[2].is[!=].to[<context.args.get[2].escaped>]> || <context.args.get[3].is[!=].to[<context.args.get[3].escaped>]> { 
+      - narrate "<&6>That value doesn't look right." 
+      - queue clear 
+      }
+    - define arg2 <context.args.get[2]>
+    - define arg3 <context.args.get[3]>
+    - if li@help|false|true|null|%arg2% contains %arg3% {
+      - narrate "<&6>That is not a valid arena name."
+      - queue clear
+      }
+    - if <yaml[dhunger_saves].list_keys[dhg.arenas].contains[%arg2%]> {
+      - narrate "<&6>Renaming arena with name<&co> %arg2% to<&co> %arg3%"
+      - run dhunger_task_yaml_copy def:dhg.arenas.%arg2%|dhg.arenas.%arg3% instantly
+      - run dhunger_command_delete def:%arg2% instantly
+      - note <yaml[dhunger_saves].read[dhg.arenas.%arg3%.cuboid]||cu@0,0,0,world|0,0,0,world> as:dhg_%arg3%
+      - inject dhunger_command_save
+      }
+      else {
+      - narrate "<&6>Arena with that name not found."
+      }
+
 
 dhunger_command_lock:
   type: task
@@ -1292,3 +1403,42 @@ dhunger_game_restock:
       - inject dhunger_stock_chests %arena%
       }
 
+dhunger_world_hidden:
+  type: world
+  debug: false
+  events:
+    on entity spawns:
+    - foreach <yaml[dhunger_saves].list_keys[dhg.arenas].exclude[default]> {
+      - if <context.entity.location.is_within[cu@dhg_%value%]> {
+        - if <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> {
+          - if <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.spawnable].as_list||li@> !contains <context.entity> determine cancelled
+          }
+        }
+      }
+      
+dhunger_task_yaml_copy:
+  type: task
+  debug: false
+  script:
+    - define sourcekey %1%
+    - define destkey %2%
+    - if <yaml[dhunger_saves].contains[%1%].not> {
+      - narrate "Source invalid for yaml copy"
+      - queue stop
+      }
+    - if <yaml[dhunger_saves].list_keys[%1%].size||0> > 0 {
+      - foreach <yaml[dhunger_saves].list_keys[%1%]||li@> {
+        - run dhunger_task_yaml_copy def:%1%.%value%|%2%.%value% instantly
+        }
+      }
+      else {
+      - if <yaml[dhunger_saves].is_list[%1%]> {
+        - foreach <yaml[dhunger_saves].read[%1%]> {
+          - yaml id:dhunger_saves set %2%:->:%value%
+          }
+        }
+        else {
+        - yaml id:dhunger_saves set %2%:<yaml[dhunger_saves].read[%1%]>
+        }
+      }
+      
