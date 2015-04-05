@@ -45,7 +45,7 @@ dHunger:
     on player killed:
     - if <player.has_flag[dhg.play]> {
       - define arena <player.flag[dhg.play]>
-      - narrate "<context.entity.name> was killed by <tern[<context.damager.is_player>]:<context.damager.name>||<context.cause>>" targets:<server.flag[dhg.%arena%.players].as_list||li@>
+      - narrate "<context.entity.name> was killed by <tern[<context.damager.is_player>]:<context.damager.name>||<context.cause>> in arena %arena%" targets:<server.flag[dhg.%arena%.players].as_list||li@>
       - inject dhunger_remove_player
       - run dhunger_check_end_of_game def:%arena% instantly
       - determine cancelled
@@ -84,28 +84,20 @@ dHunger:
       }
 
     on block ignites:
-    - foreach <yaml[dhunger_saves].list_keys[dhg.arenas].exclude[default]> {
-      - if <context.location.is_within[cu@dhg_%value%]> && <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> determine cancelled
-      }
+    - inject dhunger_task_block_change_check
+
     on block burns:
-    - foreach <yaml[dhunger_saves].list_keys[dhg.arenas].exclude[default]> {
-      - if <context.location.is_within[cu@dhg_%value%]> && <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> determine cancelled
-      }
-      
+    - inject dhunger_task_block_change_check
+
     on block forms:
-    - foreach <yaml[dhunger_saves].list_keys[dhg.arenas].exclude[default]> {
-      - if <context.location.is_within[cu@dhg_%value%]> && <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> determine cancelled
-      }
-      
+    - inject dhunger_task_block_change_check
+
     on block fades:
-    - foreach <yaml[dhunger_saves].list_keys[dhg.arenas].exclude[default]> {
-      - if <context.location.is_within[cu@dhg_%value%]> && <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> determine cancelled
-      }
-      
+    - inject dhunger_task_block_change_check
+
     on block builds:
-    - foreach <yaml[dhunger_saves].list_keys[dhg.arenas].exclude[default]> {
-      - if <context.location.is_within[cu@dhg_%value%]> && <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> determine cancelled
-      }
+    - inject dhunger_task_block_change_check
+
       
 dhunger_task_init:
   type: task
@@ -197,7 +189,7 @@ dhunger_command_create:
       - narrate "<&6>That is not a valid arena name."
       - queue clear
       }
-      - if <player.selected_region.is[==].to[null]||true> { 
+    - if <player.selected_region.is[==].to[null]||true> { 
       - narrate "<&6>You don't have an area selected with WorldEdit wand." 
       - queue clear 
       }
@@ -534,7 +526,7 @@ dhunger_command_tier:
 
 dhunger_command_spawnable:
   type: task
-  debug: true
+  debug: false
   script:
     - define arg2 <context.args.get[2]||help>
     - define arg3 <context.args.get[3]||li@>
@@ -1066,7 +1058,7 @@ dhunger_board_reset:
       # Set panel 1
       - sign type:automatic "Hunger Game|%arena%|<&lt>Click to Join<&gt>" <def[sign].get[1]>
       # Set panel 2
-      - sign type:automatic "%arena%|<white>%p_count%<&0>/<&2>%alive%<&0>/<&4><server.flag[dhg.%arena%.dead].size||0><&0>/<&0><yaml[dhunger_saves].read[dhg.arenas.%arena%.settings.max_players]||20>" <def[sign].get[2]>
+      - sign type:automatic "%arena%|<white>%p_count%<&0>/<&2>%alive%<&0>/<&4><server.flag[dhg.%arena%.dead].size||0><&0>/<&0><yaml[dhunger_saves].list_keys[dhg.arenas.%arena%.spawnpoint].size||20>" <def[sign].get[2]>
       # Clear remaining boards
       - define dead_list <server.flag[dhg.%arena%.dead]||li@>
       - define p_sign li@
@@ -1219,7 +1211,7 @@ dhunger_game_start:
       - narrate "Beginning in <red>%count%" targets:<server.flag[dhg.%arena%.players].as_list||li@>
       - wait 1s
       }
-    - ^run dhunger_stock_chests def:%arena%
+    - ^run dhunger_stock_chests def:%arena% instantly
     - ^define state down
     - ^flag server dhg.%arena%.started:true
     - ^foreach <server.flag[dhg.%arena%.players].as_list> {
@@ -1317,7 +1309,15 @@ dhunger_stock_chests:
             - define additems <def[additems].insert[%value%[quantity=<util.random.int[1].to[<def[itemvals].get[2]||1>]>]].at[1]>
             }
           }
-        - inventory set d:%chest% o:%additems%
+        - define additems <def[additems].get[1].to[27]>
+        - foreach %additems% {
+          - define item %value%
+          - while true {
+            - define slot <util.random.int[1].to[27]>
+            - if <def[chest].inventory.slot[%slot%]> == i@air while stop
+            }
+          - inventory set d:%chest% o:%value% slot:%slot%
+          }
         }
       }
 
@@ -1411,7 +1411,9 @@ dhunger_world_hidden:
     - foreach <yaml[dhunger_saves].list_keys[dhg.arenas].exclude[default]> {
       - if <context.entity.location.is_within[cu@dhg_%value%]> {
         - if <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> {
-          - if <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.spawnable].as_list||li@> !contains <context.entity> determine cancelled
+          - if <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.spawnable].as_list||li@> !contains <context.entity> {
+            - determine cancelled
+            }
           }
         }
       }
@@ -1441,4 +1443,11 @@ dhunger_task_yaml_copy:
         - yaml id:dhunger_saves set %2%:<yaml[dhunger_saves].read[%1%]>
         }
       }
-      
+
+dhunger_task_block_change_check:
+  type: task
+  debug: false
+  script:
+    - foreach <yaml[dhunger_saves].list_keys[dhg.arenas].exclude[default]> {
+      - if <context.location.is_within[cu@dhg_%value%]> && <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> determine cancelled
+      }
