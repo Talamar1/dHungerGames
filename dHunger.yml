@@ -30,7 +30,7 @@ dHunger:
       - flag <player> dhg:!
       }
     - if <yaml[dhunger_saves].contains[dhg.player.<player.uuid>]> {
-      - inject dhunger_replace_inventory
+      - inject dhunger_task_cleanup_player
       }
     - teleport <player> <yaml[dhunger_saves].read[dhg.lobby]||<player.location.world.spawn_location>>
     
@@ -123,7 +123,7 @@ dhunger_dhg:
       - queue clear
       }
     - define arg1 <context.args.get[1].escaped>
-    - define cmdList li@create|save|delete|spawn|rename|set|breakable|placeable|lock|unlock|resize|board|disable|enable|start|stop|quit|select|list|clear|reload|lobby|vote|tier1|tier2|reset_default|join|spawnable
+    - define cmdList li@create|save|delete|spawn|rename|set|breakable|placeable|lock|unlock|resize|board|disable|enable|start|stop|quit|select|list|clear|reload|lobby|vote|tier1|tier2|scan_chests|reset_default|join|spawnable
     - if <def[cmdList].contains[%arg1%]> {
       - if <context.server> || <player.has_permission[dhunger.%arg1%]||false> {
         - if li@placeable|breakable contains %arg1% inject dhunger_command_blockmgmt
@@ -359,7 +359,7 @@ dhunger_command_resize:
       - narrate "<&6>You don't have an area selected with WorldEdit wand." 
       - queue clear 
       }
-    - narrate "Creating new arena"
+    - narrate "Resizing arena %arena%"
     - yaml id:dhunger_saves set dhg.arenas.<player.flag[dhg.edit]>.cuboid:<player.selected_region>
     - inject dhunger_command_save
     - note <player.selected_region> as:dhg_<player.flag[dhg.edit]>
@@ -524,6 +524,72 @@ dhunger_command_tier:
       }
     - inject dhunger_command_save
 
+dhunger_task_scan_chests:
+  type: task
+  debug: false
+  script:
+    - wait 1t
+    - if <context.args.get[2].is[==].to[null]||true> && !<player.has_flag[dhg.edit]> && <def[arena].exists> { 
+      - narrate "<&6>/dhg locked <&lt>Arena ID<&gt>" 
+      - narrate "<&6>Either select an arena or provide an arena name" 
+      - queue clear 
+      }
+    - if !<def[arena].exists> {
+      - if <context.args.get[2].is[==].to[null]||true> {
+        - define arena <player.flag[dhg.edit]>
+        }
+        else {
+        - define arena <context.args.get[2]>
+        }
+      }
+    - if %arena% != <def[arena].escaped> { 
+      - narrate "<&6>That value doesn't look right." 
+      - queue clear 
+      }
+    - if <yaml[dhunger_saves].contains[dhg.arenas.%arena%]> && <server.list_notables[cuboids].contains[cu@dhg_%arena%]> {
+      - narrate "Processing chests in arena %arena"
+      - define length <cu@dhg_%arena%.min.x.sub[<cu@dhg_%arena%.max.x>].abs>
+      - define width <cu@dhg_%arena%.min.z.sub[<cu@dhg_%arena%.max.z>].abs>
+      - define height <cu@dhg_%arena%.min.y.sub[<cu@dhg_%arena%.max.y>].abs>
+      - define chunkie 100
+      - define chests li@
+      - repeat <def[length].div[%chunkie%].round_up> {
+        - define x_tick <def[value].sub[1]>
+        - repeat <def[width].div[%chunkie%].round_up> {
+          - define z_tick <def[value].sub[1]>
+          - repeat <def[height].div[%chunkie%].round_up> {
+            - define y_tick <def[value].sub[1]>
+            - foreach li@x|y|z {
+              - define %value%_min <cu@dhg_%arena%.min.%value%.add[<def[%value%_tick].mul[%chunkie%]>]>
+              - define %value%_max <cu@dhg_%arena%.min.%value%.add[<def[%value%_tick].add[1].mul[%chunkie%].sub[1]>]>
+              - if <def[%value%_max]> > <cu@dhg_%arena%.max.%value%> define %value%_max <cu@dhg_%arena%.max.%value%>
+              }
+            - define subcuboid cu@%x_min%,%y_min%,%z_min%,<cu@dhg_%arena%.min.world.name>|%x_max%,%y_max%,%z_max%,<cu@dhg_%arena%.min.world.name>
+            - define chests <def[chests].include[<def[subcuboid].get_blocks[chest,1|chest,2|chest,3|chest,4|chest,5|chest,6|trapped_chest,1|trapped_chest,2|trapped_chest,3|trapped_chest,4|trapped_chest,5|trapped_chest,6]>]>
+            - wait 1t
+            }
+          }
+        }
+      - yaml id:dhunger_saves set dhg.arenas.%arena%.settings.tier1_chests:!
+      - yaml id:dhunger_saves set dhg.arenas.%arena%.settings.tier2_chests:!
+      - foreach %chests% {
+        - narrate "Chest %value% material <def[value].material.name>"
+        - if <def[value].material.name> == chest {
+          - yaml id:dhunger_saves set dhg.arenas.%arena%.settings.tier1_chests:->:%value%
+          }
+          else {
+          - yaml id:dhunger_saves set dhg.arenas.%arena%.settings.tier2_chests:->:%value%
+          }
+        }
+      - inject dhunger_command_save
+      - narrate "found <def[chests].size> chests "
+      }
+      else {
+      - narrate "<&6>Arena with that name not found."
+      }
+    - narrate "Chest processing for arena %arena% complete"
+
+
 dhunger_command_spawnable:
   type: task
   debug: false
@@ -544,6 +610,7 @@ dhunger_command_spawnable:
       }
       else if %arg2% == clear {
       - yaml id:dhunger_saves set dhg.arenas.%arena%.settings.spawnable:!
+      - narrate "Spawnable list cleared for arena %arena%"
       - inject dhunger_command_save
       - queue clear
       }
@@ -712,6 +779,7 @@ dhunger_command_lock:
     - if <yaml[dhunger_saves].list_keys[dhg.arenas].contains[%arena%]> {
       - yaml id:dhunger_saves set dhg.arenas.%arena%.settings.locked:true
       - narrate "<&6>Locking arena with name: %arena%"
+      - inject dhunger_task_scan_chests
       - inject dhunger_command_save
       }
       else {
@@ -735,7 +803,7 @@ dhunger_command_unlock:
       }
     - if <yaml[dhunger_saves].list_keys[dhg.arenas].contains[%arena%]> {
       - yaml id:dhunger_saves set dhg.arenas.%arena%.settings.locked:false
-      - narrate "<&6>Unlcking arena with name: %arena%"
+      - narrate "<&6>Unlocking arena with name: %arena%"
       - inject dhunger_command_save
       }
       else {
@@ -1110,22 +1178,17 @@ dhunger_command_join:
       - while <def[spawnpoints].size> > 0 {
         - define randomnum <util.random.int[1].to[<def[spawnpoints].size>]>
         - define spawnpt <yaml[dhunger_saves].read[dhg.arenas.%arena%.spawnpoint.<def[spawnpoints].get[%randomnum%]>]>
-        - if <def[spawnpt.find.players.within[1].size> > 0 {
-          - define spawnpoints <def[spawnpoints].remove[%randomnum%]>
-          }
-          else {
+        - if <def[spawnpt].find.players.within[3].size> == 0 {
           - define ingame true
           - while stop
           }
+        - define spawnpoints <def[spawnpoints].remove[%randomnum%]>
         }
       }
       else {
       - foreach %spawnpoints% {
         - define spawnpt <yaml[dhunger_saves].read[dhg.arenas.%arena%.spawnpoint.%value%]>
-        - if <def[spawnpt].find.players.within[1].size> > 0 {
-          - foreach next
-          }
-          else {
+        - if <def[spawnpt].find.players.within[3].size> == 0 {
           - define ingame true
           - foreach stop
           }
@@ -1135,9 +1198,8 @@ dhunger_command_join:
       - narrate "Game spawns are full"
       }
       else {
-#      - run dhunger_task_barricade def:up|%arena%|%spawnpt%
       - flag server dhg.%arena%.players:->:<player>
-      - inject dhunger_remove_inventory
+      - inject dhunger_task_prep_player
       - define state up
       - inject dhunger_task_barricade
       - teleport <player> %spawnpt%
@@ -1183,13 +1245,12 @@ dhunger_game_check_start:
         else if <server.flag[dhg.%arena%.timer].is[or_less].than[0]> {
         - if <server.flag[dhg.%arena%.players].size.is[less].than[<yaml[dhunger_saves].read[dhg.arenas.%arena%.settings.min_player]||2>]> {
           - define state down
-          - foreach <server.flag[dhg.%arena%.players].as_list> {
-            - run dhunger_remove_player player:%value%
-            - define spawnpt <def[value].location.block>
+          - foreach <yaml[dhunger_saves].list_keys[dhg.arenas.%arena%.spawnpoint].numerical> {
+            - define spawnpt <yaml[dhunger_saves].read[dhg.arenas.%arena%.spawnpoint.%value%].as_location.block>
             - inject dhunger_task_barricade
             }
           - narrate "Not enough players, cancelling game" targets:<server.flag[dhg.%arena%.players].as_list||li@>
-          - run dhunger_check_end_of_game def:%arena%
+          - run dhunger_check_end_of_game def:%arena%|cancelled
           - flag server dhg.%arena%:!
           - while stop
           }
@@ -1226,69 +1287,75 @@ dhunger_game_start:
       - run dhunger_game_restock def:%arena% id:dhg_restock_%arena%
       }
 
-dhunger_remove_inventory:
+dhunger_task_prep_player:
   type: task
   debug: false
   script:
-    - ^if <player.is_online> narrate "Remove Inventory"
+    #- ^if <player.is_online> narrate "Remove Inventory"
     - ^define equipment <player.flag[dhg.equipment]||li@>
     - ^yaml id:dhunger_saves set 'dhg.player.<player.uuid>.equipment:<player.equipment>'
     - ^yaml id:dhunger_saves set 'dhg.player.<player.uuid>.inventory:<player.inventory.list_contents>'
+    - ^yaml id:dhunger_saves set 'dhg.player.<player.uuid>.gamemode:<player.gamemode>
     - ^inventory clear d:<player>
     - ^equip <player> 'boots:<def[equipment].get[1]||i@air>' 'legs:<def[equipment].get[2]||i@air>' 'chest:<def[equipment].get[3]||i@air>' 'head:<def[equipment].get[4]||i@air>'
     - inject dhunger_command_save
 
-dhunger_replace_inventory:
+dhunger_task_cleanup_player:
   type: task
   debug: false
   script:
-    - ^if <player.is_online> narrate "Replace Inventory"
+    #- ^if <player.is_online> narrate "Replace Inventory"
     - ^inventory clear d:<player>
     - ^define equipment <yaml[dhunger_saves].read[dhg.player.<player.uuid>.equipment]||li@>
     - ^equip <player> 'boots:<def[equipment].get[1]||i@air>' 'legs:<def[equipment].get[2]||i@air>' 'chest:<def[equipment].get[3]||i@air>' 'head:<def[equipment].get[4]||i@air>'
     - ^inventory set 'd:<player.inventory>' 'o:<yaml[dhunger_saves].read[dhg.player.<player.uuid>.inventory]||li@>'
+    - ^adjust <player> gamemode:<yaml[dhunger_saves].read[dhg.player.<player.uuid>.gamemode]||survival]>
     - ^yaml id:dhunger_saves set 'dhg.player.<player.uuid>:!'
-    - inject dhunger_command_save
+    - ^inject dhunger_command_save
+    - ^flag player dhg.play:!
+    - ^adjust <player> health:20
+    - ^adjust <player> food_level:100
+    - ^adjust <player> saturation:100
 
 dhunger_remove_player:
   type: task
-  debug: false
+  debug: true
   script:
-    - ^if <player.is_online> drop <player.inventory.list_contents>
     - ^define arena <player.flag[dhg.play]>
-    - ^teleport <player> <yaml[dhunger_saves].read[dhg.lobby]||<player.location.world.spawn_location>>
+    - ^if <player.is_online> {
+      - drop <player.inventory.list_contents>
+      - ^teleport <player> <yaml[dhunger_saves].read[dhg.lobby]||<player.location.world.spawn_location>>
+      }
     - ^define sound <tern[<yaml[dhunger_saves].contains[dhg.arena.%arena%.settings.sound]>]:<yaml[dhunger_saves].read[dhg.arena.%arena%.settings.sound]>||FIREWORK_LARGE_BLAST>
     - ^if <def[sound].contains[custom]> playsound <server.flag[dhg.%arena%.players].as_list||li@> sound:%sound% volume:10 custom
       else playsound <server.flag[dhg.%arena%.players].as_list||li@> sound:%sound% volume:10
     - ^if <yaml[dhunger_saves].read[dhg.arenas.%arena%.settings.lightning]||2> == 2 {
       - run dhunger_game_lightning def:%arena%
       }
-    - inject dhunger_replace_inventory
     - ^flag server dhg.%arena%.dead:->:<player.name>
     - inject dhunger_board_reset
-    - ^flag player dhg.play:!
-    - ^if <player.is_online> narrate "Removing player <player.name> flag"
-    - ^adjust <player> health:20
-    - ^adjust <player> food_level:100
-    - ^adjust <player> saturation:100
+    - ^if <player.is_online> inject dhunger_task_cleanup_player
+
 
 dhunger_check_end_of_game:
   type: task
   debug: false
   script:
     - ^define arena %1%
-    - ^if <server.get_online_players_flagged[dhg.play].filter[flag[dhg.play].is[==].to[%arena%]].size.is[==].to[1]> {
+    - ^if <server.get_online_players_flagged[dhg.play].filter[flag[dhg.play].is[==].to[%arena%]].size.is[==].to[1]> && <def[2]||0> != cancelled {
       - define winner <server.get_online_players_flagged[dhg.play].filter[flag[dhg.play].is[==].to[%arena%]].get[1]>
-      - run dhunger_remove_player player:%winner% instantly
       - announce "<green><def[winner].name> has won the hunger game in %arena%"
+      }
+    - ^foreach <server.get_online_players_flagged[dhg.play].filter[flag[dhg.play].is[==].to[%arena%]]> {
+      - run dhunger_remove_player player:%value% instantly
       }
     - ^run dhunger_task_block_rollback def:%arena%
     - ^remove <cu@dhg_%arena%.list_entities[dropped_item]>
-    - if <queue.exists[dhg_lightning_%arena%]> queue dhg_lightning_%arena% stop
-    - if <queue.exists[dhg_restock_%arena%]> queue dhg_restock_%arena% stop
+    - if <queue.exists[dhg_lightning_%arena%]> queue queue:dhg_lightning_%arena% stop
+    - if <queue.exists[dhg_restock_%arena%]> queue queue:dhg_restock_%arena% stop
     - ^flag server dhg.%arena%:!
     - inject dhunger_board_reset
-    - announce "Finished end_of_game"
+    #- announce "Finished end_of_game"
 
 dhunger_stock_chests:
   type: task
@@ -1298,10 +1365,10 @@ dhunger_stock_chests:
     - ^foreach li@tier1|tier2 {
       - define tier %value%
       - if !<yaml[dhunger_saves].contains[dhg.arenas.%arena%.settings.%tier%]> foreach next
-      - define type <tern[<def[tier].is[==].to[tier1]>]:m@chest||m@trapped_chest>
-      - define chests <cu@dhg_%arena%.get_blocks[%type%,1|%type%,2|%type%,3|%type%,4|%type%,5|%type%,6]>
-      - foreach %chests% {
+      - if !<yaml[dhunger_saves].contains[dhg.arenas.%arena%.settings.%tier%_chests]> foreach next
+      - foreach <yaml[dhunger_saves].read[dhg.arenas.%arena%.settings.%tier%_chests].as_list> {
         - define chest %value%
+        - inventory clear d:%chest%
         - define additems li@
         - foreach <yaml[dhunger_saves].list_keys[dhg.arenas.%arena%.settings.%tier%]> {
           - define itemvals <yaml[dhunger_saves].read[dhg.arenas.%arena%.settings.%tier%.%value%].as_list>
@@ -1309,7 +1376,11 @@ dhunger_stock_chests:
             - define additems <def[additems].insert[%value%[quantity=<util.random.int[1].to[<def[itemvals].get[2]||1>]>]].at[1]>
             }
           }
-        - define additems <def[additems].get[1].to[27]>
+        - define additems <def[additems].get[1].to[27]||null>
+        - if %additems% == null {
+          - narrate "error finding items for chests"
+          - queue clear
+          }
         - foreach %additems% {
           - define item %value%
           - while true {
@@ -1356,9 +1427,6 @@ dhunger_task_barricade:
   type: task
   debug: false
   script:
-#    - define state <tern[<def[state]||false>]:<def[state]>||<def[1]||up>>
-#    - define arena <tern[<def[arena]||false>]:<def[arena]>||<def[2]||false>>
-#    - define spawnpt <tern[<def[spawnpt]||false>]:<def[spawnpt]>||<def[3]||up>>
     - ^define barricade li@
     - ^define blocktype <yaml[dhunger_saves].read[dhg.arenas.%arena%.settings.barrier]||m@barrier>
     - ^foreach li@0|1|2 {
