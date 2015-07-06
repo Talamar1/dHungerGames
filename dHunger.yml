@@ -8,7 +8,7 @@ dHunger:
   debug: false
   events:
     on server start:
-    - run dhunger_task_init delay:5t
+    - run dhunger_task_init delay:1t
 
     on shutdown:
     - run dhunger_task_init delay:1t
@@ -52,8 +52,7 @@ dHunger:
       }
 
     on player breaks block in notable cuboid:
-    - foreach <yaml[dhunger_saves].list_keys[dhg.arenas].replace[default]> {
-      - if <context.cuboids.contains[cu@dhg_%value%]> {
+    - foreach <context.location.cuboids.parse[notable_name].filter[starts_with[dhg_]].parse[after[dhg_]]> {
         - if <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> && <yaml[dhunger_saves].contains[dhg.arenas.%value%.settings.breakable]> {
           - if !<yaml[dhunger_saves].read[dhg.arenas.%value%.settings.breakable].contains[<context.material>]> {
             - determine cancelled
@@ -68,17 +67,15 @@ dHunger:
       }
 
     on player places block in notable cuboid:
-    - foreach <yaml[dhunger_saves].list_keys[dhg.arenas].exclude[default]> {
-      - if <context.cuboids.contains[cu@dhg_%value%]> {
-        - if <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> && <yaml[dhunger_saves].contains[dhg.arenas.%value%.settings.placeable]> {
-          - if !<yaml[dhunger_saves].read[dhg.arenas.%value%.settings.placeable].contains[<context.material>]> {
-            - determine cancelled
-            - foreach stop
-            }
-            else {
-            - run dhunger_task_block_track def:place|%value%|<context.location>|<context.material>
-            - foreach stop
-            }
+    - foreach <context.location.cuboids.parse[notable_name].filter[starts_with[dhg_]].parse[after[dhg_]]> {
+      - if <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> && <yaml[dhunger_saves].contains[dhg.arenas.%value%.settings.placeable]> {
+        - if !<yaml[dhunger_saves].read[dhg.arenas.%value%.settings.placeable].contains[<context.material>]> {
+          - determine cancelled
+          - foreach stop
+          }
+          else {
+          - run dhunger_task_block_track def:place|%value%|<context.location>|<context.material>
+          - foreach stop
           }
         }
       }
@@ -98,14 +95,31 @@ dHunger:
     on block builds:
     - inject dhunger_task_block_change_check
 
-      
+    on entity spawns:
+    - if !<server.has_flag[dhg.loaded]> queue clear
+    - foreach <yaml[dhunger_saves].list_keys[dhg.arenas].exclude[default]> {
+      - if <context.entity.location.is_within[cu@dhg_%value%]> {
+        - if <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> {
+          - if <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.spawnable].as_list||li@> !contains <context.entity> {
+            - determine cancelled
+            }
+          }
+        }
+      }      
+
 dhunger_task_init:
   type: task
   debug: false
   script:
-    - inject dhunger_command_reload
     - ^flag server dhg:!
+    - inject dhunger_command_reload
     - ^foreach <yaml[dhunger_saves].list_keys[dhg.arenas].filter[is[!=].to[default]]> {
+      - if <yaml[dhunger_saves].contains[dhg.arenas.%value%.cuboid]> {
+        - define area <yaml[dhunger_saves].read[dhg.arenas.%value%.cuboid]>
+        - if <def[area].as_cuboid.notable_name> == null {
+          - note %area% as:dhg_%value%
+          }
+        }
       - run dhunger_check_end_of_game def:%value%
       }
 
@@ -315,6 +329,7 @@ dhunger_command_reload:
       - yaml savefile:dhunger_saves.yml id:dhunger_saves
       - inject dhunger_command_reset_default
       }
+    - flag server dhg.loaded
 
 dhunger_command_clear:
   type: task
@@ -351,9 +366,11 @@ dhunger_command_resize:
   type: task
   debug: false
   script:
-    - if !<player.has_flag[dhg.edit]> {
-      - narrate "You don't have an arena selected."
-      - queue clear
+    - define arena <context.args.get[2]||<player.flag[dhg.edit]||<def[1]||help>>>
+    - if %arena% == help {
+      - narrate "<&6>/dhg resize <&lt>Arena Name<&gt>" 
+      - narrate "<&6>Either select an arena or provide an arena name" 
+      - queue clear 
       }
     - if <player.selected_region.is[==].to[null]||true> { 
       - narrate "<&6>You don't have an area selected with WorldEdit wand." 
@@ -735,7 +752,7 @@ dhunger_command_rename:
   debug: false
   script:
     - if <context.args.get[2].is[==].to[null]||true> || <context.args.get[3].is[==].to[null]||true> { 
-      - narrate "<&6>/dhg select <&lt>arena name<&gt>" 
+      - narrate "<&6>/dhg rename <&lt>arena name<&gt>" 
       - narrate "<&6>arena name - name for your arena" 
       - queue clear 
       }
@@ -1470,21 +1487,6 @@ dhunger_game_restock:
       - wait %timer%
       - inject dhunger_stock_chests %arena%
       }
-
-dhunger_world_hidden:
-  type: world
-  debug: false
-  events:
-    on entity spawns:
-    - foreach <yaml[dhunger_saves].list_keys[dhg.arenas].exclude[default]> {
-      - if <context.entity.location.is_within[cu@dhg_%value%]> {
-        - if <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> {
-          - if <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.spawnable].as_list||li@> !contains <context.entity> {
-            - determine cancelled
-            }
-          }
-        }
-      }
       
 dhunger_task_yaml_copy:
   type: task
@@ -1516,6 +1518,7 @@ dhunger_task_block_change_check:
   type: task
   debug: false
   script:
-    - foreach <yaml[dhunger_saves].list_keys[dhg.arenas].exclude[default]> {
-      - if <context.location.is_within[cu@dhg_%value%]> && <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> determine cancelled
+    - if !<server.has_flag[dhg.loaded]> queue clear
+    - foreach <context.location.cuboids.parse[notable_name].filter[starts_with[dhg_]].parse[after[dhg_]]> {
+      - if <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> determine cancelled
       }
