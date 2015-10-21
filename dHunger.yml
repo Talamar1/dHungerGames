@@ -53,15 +53,14 @@ dHunger:
 
     on player breaks block in notable cuboid:
     - foreach <context.location.cuboids.parse[notable_name].filter[starts_with[dhg_]].parse[after[dhg_]]> {
-        - if <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> && <yaml[dhunger_saves].contains[dhg.arenas.%value%.settings.breakable]> {
-          - if !<yaml[dhunger_saves].read[dhg.arenas.%value%.settings.breakable].contains[<context.material>]> {
-            - determine cancelled
-            - foreach stop
-            }
-            else {
-            - run dhunger_task_block_track def:break|%value%|<context.location>|<context.material>
-            - foreach stop
-            }
+      - if <yaml[dhunger_saves].read[dhg.arenas.%value%.settings.locked]||false> && <yaml[dhunger_saves].contains[dhg.arenas.%value%.settings.breakable]> {
+        - if !<yaml[dhunger_saves].read[dhg.arenas.%value%.settings.breakable].contains[<context.material>]> {
+          - determine cancelled
+          - foreach stop
+          }
+          else {
+          - run dhunger_task_block_track def:break|%value%|<context.location>|<context.material>
+          - foreach stop
           }
         }
       }
@@ -130,7 +129,7 @@ dhunger_dhg:
   description: dHunger Command
   usage: /dhg <&lt>arg1<&pipe>arg2...<&gt>
   aliases:
-    dhunger
+    - dhunger
   script:
     - if <context.args.size||0> == 0 {
       - inject dhunger_command_help
@@ -1312,7 +1311,7 @@ dhunger_task_prep_player:
     - ^define equipment <player.flag[dhg.equipment]||li@>
     - ^yaml id:dhunger_saves set 'dhg.player.<player.uuid>.equipment:<player.equipment>'
     - ^yaml id:dhunger_saves set 'dhg.player.<player.uuid>.inventory:<player.inventory.list_contents>'
-    - ^yaml id:dhunger_saves set 'dhg.player.<player.uuid>.gamemode:<player.gamemode>
+    - ^yaml id:dhunger_saves set 'dhg.player.<player.uuid>.gamemode:<player.gamemode>'
     - ^inventory clear d:<player>
     - ^equip <player> 'boots:<def[equipment].get[1]||i@air>' 'legs:<def[equipment].get[2]||i@air>' 'chest:<def[equipment].get[3]||i@air>' 'head:<def[equipment].get[4]||i@air>'
     - inject dhunger_command_save
